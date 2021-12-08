@@ -38,6 +38,7 @@ func NewHandlers(opts *config.Options) []handlers.RequestHandler {
 	if err != nil {
 		log.Fatalf("Error constructing OpenShiftClient %v", err)
 	}
+	log.Infof("NewHandlers")
 	return []handlers.RequestHandler{
 		&authorizationHandler{
 			config:             opts,

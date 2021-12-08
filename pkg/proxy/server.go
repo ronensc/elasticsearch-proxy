@@ -3,6 +3,7 @@ package proxy
 import (
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
@@ -41,9 +42,11 @@ type UpstreamProxy struct {
 func (u *UpstreamProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("GAP-Upstream-Address", u.upstream)
 	if u.wsHandler != nil && r.Header.Get("Connection") == "Upgrade" && r.Header.Get("Upgrade") == "websocket" {
-		u.wsHandler.ServeHTTP(w, r)
+		log.Infof("wshandler")
+		u.wsHandler.ServeHTTP(NewResponseWriterWithErrors(w), r)
 	} else {
-		u.handler.ServeHTTP(w, r)
+		log.Infof("handler")
+		u.handler.ServeHTTP(NewResponseWriterWithErrors(w), r)
 	}
 }
 
@@ -131,7 +134,9 @@ func NewProxyServer(opts *configOptions.Options) *ProxyServer {
 	case "http", "https":
 		log.Infof("mapping path %q => upstream %q", path, u)
 		ins := instrumentation.NewHandler(prometheus.DefaultRegisterer)
+		log.Infof("proxy")
 		proxy := NewWebSocketOrRestReverseProxy(u, opts)
+		log.Infof("serveMux")
 		serveMux.Handle(path, ins.WithHandler("proxy", proxy))
 
 	default:
@@ -175,4 +180,33 @@ func (p *ProxyServer) StructuredError(rw http.ResponseWriter, err error) {
 		return
 	}
 	_, _ = rw.Write(b)
+}
+
+// ResponseWriterWithErrors encapsulates ResponseWriter and returns an error when calling Write()
+type ResponseWriterWithErrors struct {
+	origin http.ResponseWriter
+}
+
+func NewResponseWriterWithErrors(rw http.ResponseWriter) *ResponseWriterWithErrors {
+	rwwe := &ResponseWriterWithErrors{
+		origin: rw,
+	}
+	return rwwe
+
+}
+
+func (m *ResponseWriterWithErrors) Header() http.Header {
+	log.Errorf("In Header()")
+	return m.origin.Header()
+}
+
+func (m *ResponseWriterWithErrors) Write(w []byte) (int, error) {
+	log.Errorf("Inject an error in Write()")
+	return 0, errors.New("MY ERROR")
+	//return m.origin.Write(w)
+}
+
+func (m *ResponseWriterWithErrors) WriteHeader(statusCode int) {
+	log.Errorf("In WriteHeader()")
+	m.origin.WriteHeader(statusCode)
 }
